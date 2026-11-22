@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: ebpf-cloud-sentinel
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ebpf-cloud-sentinel
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ebpf-cloud-sentinel
+    spec:
+      hostNetwork: true
+      hostPID: true
+      serviceAccountName: {{ .Release.Name }}-sa
+      containers:
+        - name: sentinel
+          image: "{{ .Values.daemonset.image.repository }}:{{ .Values.daemonset.image.tag }}"
+          imagePullPolicy: {{ .Values.daemonset.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.daemonset.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: sys-kernel-debug
+              mountPath: /sys/kernel/debug
+              readOnly: true
+            - name: sys-fs-bpf
+              mountPath: /sys/fs/bpf
+            - name: sys-fs-cgroup
+              mountPath: /sys/fs/cgroup
+              readOnly: true
+          resources:
+            {{- toYaml .Values.daemonset.resources | nindent 12 }}
+      volumes:
+        - name: sys-kernel-debug
+          hostPath:
+            path: /sys/kernel/debug
+        - name: sys-fs-bpf
+          hostPath:
+            path: /sys/fs/bpf
+        - name: sys-fs-cgroup
+          hostPath:
+            path: /sys/fs/cgroup
