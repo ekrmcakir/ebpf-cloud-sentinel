@@ -1,0 +1,27 @@
+{
+  "title": "eBPF Cloud Sentinel - Kubernetes Zero-Trust Network & IAM Egress",
+  "panels": [
+    {
+      "title": "Egress Events Total Rate",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(ebpf_sentinel_egress_events_total[1m])", "legendFormat": "Total Egress" }
+      ]
+    },
+    {
+      "title": "Unauthorized AWS IMDS Queries (SSRF)",
+      "type": "stat",
+      "targets": [
+        { "expr": "sum(ebpf_sentinel_imds_queries_total)", "legendFormat": "IMDS Attempts" }
+      ]
+    },
+    {
+      "title": "Security Alerts Count",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(ebpf_sentinel_security_alerts_total[1m])", "legendFormat": "Alerts/sec" }
+      ]
+    }
+  ],
+  "schemaVersion": 38
+}
