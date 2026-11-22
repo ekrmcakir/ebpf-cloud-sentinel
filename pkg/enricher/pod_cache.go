@@ -35,15 +35,32 @@ func (c *PodCache) Lookup(containerID string, cgroupID uint64) *models.PodContex
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if ctx, exists := c.containers[containerID]; exists {
-		return ctx
+	var target *models.PodContext
+	if containerID != "" {
+		if ctx, exists := c.containers[containerID]; exists {
+			target = ctx
+		}
 	}
 
-	if ctx, exists := c.cgroups[cgroupID]; exists {
-		return ctx
+	if target == nil && cgroupID != 0 {
+		if ctx, exists := c.cgroups[cgroupID]; exists {
+			target = ctx
+		}
 	}
 
-	return nil
+	if target == nil {
+		return nil
+	}
+
+	// Return a copy to avoid concurrency mutation / data race
+	copied := *target
+	if target.Labels != nil {
+		copied.Labels = make(map[string]string, len(target.Labels))
+		for k, v := range target.Labels {
+			copied.Labels[k] = v
+		}
+	}
+	return &copied
 }
 
 func (c *PodCache) Remove(containerID string, cgroupID uint64) {

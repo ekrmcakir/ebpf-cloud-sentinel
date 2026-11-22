@@ -64,5 +64,16 @@ func (m *MetricsExporter) MetricsHandler() http.HandlerFunc {
 		fmt.Fprintf(w, "# HELP ebpf_sentinel_security_alerts_total Total number of generated security alerts\n")
 		fmt.Fprintf(w, "# TYPE ebpf_sentinel_security_alerts_total counter\n")
 		fmt.Fprintf(w, "ebpf_sentinel_security_alerts_total %d\n\n", atomic.LoadUint64(&m.alertsTotal))
+
+		fmt.Fprintf(w, "# HELP ebpf_sentinel_service_events_total Total egress events grouped by destination cloud service\n")
+		fmt.Fprintf(w, "# TYPE ebpf_sentinel_service_events_total counter\n")
+		m.mu.RLock()
+		for svc, ptr := range m.serviceCounts {
+			if ptr != nil {
+				val := atomic.LoadUint64(ptr)
+				fmt.Fprintf(w, "ebpf_sentinel_service_events_total{service=\"%s\"} %d\n", svc, val)
+			}
+		}
+		m.mu.RUnlock()
 	}
 }

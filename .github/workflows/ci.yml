@@ -8,9 +8,11 @@ on:
 
 jobs:
   test:
+    name: Lint, Test & Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -18,11 +20,29 @@ jobs:
           go-version: '1.22'
           check-latest: true
 
-      - name: Run Unit & Integration Tests
+      - name: Static Code Analysis (go vet)
         run: |
-          go test -v -race ./pkg/... ./cmd/... ./test/...
+          go vet ./...
+
+      - name: Run Unit & Integration Tests with Race Detector
+        run: |
+          go test -v -race -covermode=atomic -coverprofile=coverage.txt ./...
+
+      - name: Generate Coverage Summary
+        run: |
+          go tool cover -func=coverage.txt
+
+      - name: Upload Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.txt
 
       - name: Build Sentinel Daemon and Attack Simulator
         run: |
           go build -v -o bin/ebpf-cloud-sentinel ./cmd/sentinel
           go build -v -o bin/attack-simulator ./cmd/simulator
+
+      - name: Verify Container Image Build
+        run: |
+          docker build -t ebpf-cloud-sentinel:ci-test .

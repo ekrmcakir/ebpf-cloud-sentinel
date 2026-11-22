@@ -13,21 +13,33 @@ type RateDetector struct {
 	mu           sync.Mutex
 	windowCounts map[string]int
 	threshold    int
+	stopChan     chan struct{}
+	wg           sync.WaitGroup
+	isClosed     bool
 }
 
 func NewRateDetector(thresholdPerWindow int) *RateDetector {
 	rd := &RateDetector{
 		windowCounts: make(map[string]int),
 		threshold:    thresholdPerWindow,
+		stopChan:     make(chan struct{}),
 	}
 
-	// Reset window every minute
+	// Reset window every minute with clean termination support
+	rd.wg.Add(1)
 	go func() {
+		defer rd.wg.Done()
 		ticker := time.NewTicker(60 * time.Second)
-		for range ticker.C {
-			rd.mu.Lock()
-			rd.windowCounts = make(map[string]int)
-			rd.mu.Unlock()
+		defer ticker.Stop()
+		for {
+			select {
+			case <-rd.stopChan:
+				return
+			case <-ticker.C:
+				rd.mu.Lock()
+				rd.windowCounts = make(map[string]int)
+				rd.mu.Unlock()
+			}
 		}
 	}()
 
@@ -42,6 +54,10 @@ func (r *RateDetector) Evaluate(evt *models.EgressEvent) *models.SecurityAlert {
 	key := fmt.Sprintf("%s->%s", evt.Command, evt.DestAddress.String())
 
 	r.mu.Lock()
+	if r.isClosed {
+		r.mu.Unlock()
+		return nil
+	}
 	r.windowCounts[key]++
 	count := r.windowCounts[key]
 	r.mu.Unlock()
@@ -59,5 +75,19 @@ func (r *RateDetector) Evaluate(evt *models.EgressEvent) *models.SecurityAlert {
 		}
 	}
 
+	return nil
+}
+
+func (r *RateDetector) Close() error {
+	r.mu.Lock()
+	if r.isClosed {
+		r.mu.Unlock()
+		return nil
+	}
+	r.isClosed = true
+	close(r.stopChan)
+	r.mu.Unlock()
+
+	r.wg.Wait()
 	return nil
 }

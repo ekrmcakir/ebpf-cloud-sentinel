@@ -37,4 +37,8 @@ func TestMetricsExporter(t *testing.T) {
 	if !strings.Contains(resp, "ebpf_sentinel_imds_queries_total 1") {
 		t.Errorf("expected 1 imds query in metrics output, got: %s", resp)
 	}
+
+	if !strings.Contains(resp, "ebpf_sentinel_service_events_total{service=\"AWS_IMDS\"} 1") {
+		t.Errorf("expected service event metric in metrics output, got: %s", resp)
+	}
 }

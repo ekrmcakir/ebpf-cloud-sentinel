@@ -19,6 +19,27 @@ static __attribute__((always_inline)) int is_imds_address(__u32 daddr) {
 
 SEC("kprobe/tcp_v4_connect")
 int BPF_KPROBE(trace_tcp_v4_connect) {
-    // Optimized 64-bit aligned probe logic
+    struct egress_event_t *event;
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u32 pid = pid_tgid >> 32;
+    __u32 tgid = (__u32)pid_tgid;
+
+    // Reserve space in BPF ring buffer
+    event = bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+    if (!event) {
+        return 0; // Ring buffer congested or full
+    }
+
+    event->timestamp_ns = bpf_ktime_get_ns();
+    event->cgroup_id = bpf_get_current_cgroup_id();
+    event->pid = pid;
+    event->tgid = tgid;
+    event->protocol = 6; // IPPROTO_TCP
+    event->flags = FLAG_TCP_CONNECT;
+
+    bpf_get_current_comm(&event->comm, sizeof(event->comm));
+
+    // Submit reserved event to userspace ring buffer consumer
+    bpf_ringbuf_submit(event, 0);
     return 0;
 }

@@ -20,6 +20,8 @@ type AlertDispatcher struct {
 	wg         sync.WaitGroup
 	ctx        context.Context
 	cancel     context.CancelFunc
+	mu         sync.Mutex
+	isClosed   bool
 }
 
 func NewAlertDispatcher(webhookURL string, bufferSize int) *AlertDispatcher {
@@ -39,6 +41,12 @@ func (d *AlertDispatcher) Dispatch(alert *models.SecurityAlert) {
 	if alert == nil {
 		return
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.isClosed {
+		return
+	}
+
 	select {
 	case d.alertsChan <- alert:
 	default:
@@ -50,16 +58,8 @@ func (d *AlertDispatcher) startWorker() {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		for {
-			select {
-			case <-d.ctx.Done():
-				return
-			case alert, ok := <-d.alertsChan:
-				if !ok {
-					return
-				}
-				d.sendWebhook(alert)
-			}
+		for alert := range d.alertsChan {
+			d.sendWebhook(alert)
 		}
 	}()
 }
@@ -76,7 +76,10 @@ func (d *AlertDispatcher) sendWebhook(alert *models.SecurityAlert) {
 		return
 	}
 
-	req, err := http.NewRequestWithContext(d.ctx, "POST", d.webhookURL, bytes.NewBuffer(payload))
+	reqCtx, reqCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer reqCancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, "POST", d.webhookURL, bytes.NewBuffer(payload))
 	if err != nil {
 		return
 	}
@@ -89,8 +92,16 @@ func (d *AlertDispatcher) sendWebhook(alert *models.SecurityAlert) {
 }
 
 func (d *AlertDispatcher) Close() error {
-	d.cancel()
+	d.mu.Lock()
+	if d.isClosed {
+		d.mu.Unlock()
+		return nil
+	}
+	d.isClosed = true
 	close(d.alertsChan)
+	d.mu.Unlock()
+
 	d.wg.Wait()
+	d.cancel()
 	return nil
 }

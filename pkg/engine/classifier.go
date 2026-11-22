@@ -23,7 +23,8 @@ func (c *Classifier) Classify(destIP net.IP, destPort uint16) models.CloudServic
 	}
 
 	if destIP.IsPrivate() || destIP.IsLoopback() {
-		if destPort == 6443 || destPort == 443 {
+		// Identify Kubernetes API Server via standard kube port 6443 or default cluster service IP on 443
+		if destPort == 6443 || (destPort == 443 && (destIP.String() == "10.96.0.1" || destIP.String() == "172.20.0.1" || destIP.String() == "10.0.0.1")) {
 			return models.CloudServiceKubeAPIServer
 		}
 		return models.CloudServiceUnknown

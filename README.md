@@ -4,6 +4,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/ekrmcakir/ebpf-cloud-sentinel/actions/workflows/ci.yml">
+    <img src="https://github.com/ekrmcakir/ebpf-cloud-sentinel/actions/workflows/ci.yml/badge.svg" alt="CI Status" />
+  </a>
   <img src="https://img.shields.io/badge/Language-Go%201.22-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
   <img src="https://img.shields.io/badge/eBPF-Kernel%20Space-FF4081?style=flat-square&logo=linux&logoColor=white" alt="eBPF" />
   <img src="https://img.shields.io/badge/Kubernetes-DaemonSet-326CE5?style=flat-square&logo=kubernetes&logoColor=white" alt="Kubernetes" />

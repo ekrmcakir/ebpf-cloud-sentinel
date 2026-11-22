@@ -36,3 +36,16 @@ func TestAlertDispatcherWebhook(t *testing.T) {
 		t.Errorf("expected 1 webhook delivered, got %d", receivedCount)
 	}
 }
+
+func TestAlertDispatcherCloseNoPanic(t *testing.T) {
+	dispatcher := NewAlertDispatcher("", 10)
+	if err := dispatcher.Close(); err != nil {
+		t.Fatalf("unexpected close error: %v", err)
+	}
+
+	// Dispatch after close must not panic
+	dispatcher.Dispatch(&models.SecurityAlert{
+		ID:    "alert-post-close",
+		Title: "Should Not Panic",
+	})
+}

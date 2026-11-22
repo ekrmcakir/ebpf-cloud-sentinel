@@ -2,7 +2,6 @@ package enricher
 
 import (
 	"regexp"
-	"strings"
 )
 
 var (
@@ -20,15 +19,6 @@ func ExtractContainerID(cgroupPath string) string {
 	match := containerIDRegex.FindString(cgroupPath)
 	if match != "" {
 		return match
-	}
-
-	// Fallback to trailing segment
-	parts := strings.Split(cgroupPath, "/")
-	if len(parts) > 0 {
-		last := parts[len(parts)-1]
-		last = strings.TrimPrefix(last, "cri-containerd-")
-		last = strings.TrimSuffix(last, ".scope")
-		return last
 	}
 
 	return ""

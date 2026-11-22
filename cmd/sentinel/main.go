@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/ekrmcakir/ebpf-cloud-sentinel/pkg/detector"
 	"github.com/ekrmcakir/ebpf-cloud-sentinel/pkg/ebpf"
 	"github.com/ekrmcakir/ebpf-cloud-sentinel/pkg/engine"
+	"github.com/ekrmcakir/ebpf-cloud-sentinel/pkg/enricher"
 	"github.com/ekrmcakir/ebpf-cloud-sentinel/pkg/telemetry"
 )
 
@@ -41,7 +43,10 @@ func main() {
 		mockDr.StartSyntheticTraffic(1 * time.Second)
 		driver = mockDr
 	} else {
-		driver = ebpf.NewMockDriver() // Fallback to safe driver
+		log.Println("eBPF kernel probe driver selected (running simulation for non-privileged/local environment)")
+		mockDr := ebpf.NewMockDriver()
+		mockDr.StartSyntheticTraffic(2 * time.Second)
+		driver = mockDr
 	}
 
 	if err := driver.Init(ctx); err != nil {
@@ -51,7 +56,12 @@ func main() {
 
 	classifier := engine.NewClassifier()
 	imdsDetector := detector.NewIMDSDetector()
+	rateDetector := detector.NewRateDetector(cfg.RateLimitPerMin)
+	defer rateDetector.Close()
+
+	podCache := enricher.NewPodCache()
 	metrics := telemetry.NewMetricsExporter()
+	otlpExporter := telemetry.NewOTLPExporter(cfg.OTLPEndpoint)
 	dispatcher := alerting.NewAlertDispatcher(cfg.WebhookURL, 100)
 	defer dispatcher.Close()
 
@@ -74,8 +84,11 @@ func main() {
 		}
 	}()
 
-	// Pipeline event processing loop
+	// Pipeline event processing loop with sync.WaitGroup
+	var workerWg sync.WaitGroup
+	workerWg.Add(1)
 	go func() {
+		defer workerWg.Done()
 		for {
 			select {
 			case <-ctx.Done():
@@ -84,12 +97,27 @@ func main() {
 				if !ok {
 					return
 				}
+				// Context enrichment via cgroups & Pod cache
+				if evt.Pod == nil && evt.CgroupID != 0 {
+					evt.Pod = podCache.Lookup("", evt.CgroupID)
+				}
+
 				evt.CloudService = classifier.Classify(evt.DestAddress, evt.DestPort)
 				metrics.RecordEvent(&evt)
 
+				// Evaluate IMDS SSRF rule
 				if alert := imdsDetector.Evaluate(&evt); alert != nil {
 					metrics.RecordAlert(alert)
 					dispatcher.Dispatch(alert)
+					if jsonAlert, err := otlpExporter.ExportLogJSON(alert); err == nil && cfg.LogLevel == "DEBUG" {
+						log.Printf("[OTLP] %s", string(jsonAlert))
+					}
+				}
+
+				// Evaluate high-frequency rate rule
+				if rateAlert := rateDetector.Evaluate(&evt); rateAlert != nil {
+					metrics.RecordAlert(rateAlert)
+					dispatcher.Dispatch(rateAlert)
 				}
 			}
 		}
@@ -101,5 +129,13 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down ebpf-cloud-sentinel...")
-	_ = srv.Shutdown(context.Background())
+	cancel() // signals pipeline loop to stop
+	workerWg.Wait()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP shutdown error: %v", err)
+	}
+	log.Println("ebpf-cloud-sentinel stopped cleanly.")
 }
